@@ -30,12 +30,14 @@ const ExportImageDialog = preload("./exporter/export_image_dialog.tscn")
 const TextureSetEditor = preload("./texture_editor/set_editor/texture_set_editor.tscn")
 const TextureSetImportEditor = preload("./texture_editor/set_editor/texture_set_import_editor.tscn")
 const AboutDialogScene = preload("./about/about_dialog.tscn")
+const AutoTexturing = preload("./auto_texturing.gd")
 
 const DOCUMENTATION_URL = "https://hterrain-plugin.readthedocs.io/en/latest"
 
 const MENU_IMPORT_MAPS = 0
 const MENU_GENERATE = 1
 const MENU_BAKE_GLOBALMAP = 2
+const MENU_AUTO_TEXTURE = 10
 const MENU_RESIZE = 3
 const MENU_UPDATE_EDITOR_COLLIDER = 4
 const MENU_GENERATE_MESH = 5

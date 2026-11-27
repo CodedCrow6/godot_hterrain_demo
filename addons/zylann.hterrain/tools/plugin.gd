@@ -69,6 +69,9 @@ var _texture_set_editor = null
 var _texture_set_import_editor = null
 
 var _globalmap_baker = null
+# Resource holding the auto-texturing parameters (exposed in the inspector).
+# Created at runtime so users can tweak it without needing a saved file.
+var _auto_texturing : AutoTexturing = AutoTexturing.new()
 var _terrain_had_data_previous_frame = false
 var _image_cache : ImageFileCache
 
@@ -145,6 +148,7 @@ func _enter_tree():
 	menu.get_popup().add_item("Import maps...", MENU_IMPORT_MAPS)
 	menu.get_popup().add_item("Generate...", MENU_GENERATE)
 	menu.get_popup().add_item("Resize...", MENU_RESIZE)
+	menu.get_popup().add_item("Auto Texturize (slope/height)", MENU_AUTO_TEXTURE)
 	menu.get_popup().add_item("Bake global map", MENU_BAKE_GLOBALMAP)
 	menu.get_popup().add_separator()
 	menu.get_popup().add_item("Update Editor Collider", MENU_UPDATE_EDITOR_COLLIDER)
@@ -637,7 +641,10 @@ func _menu_item_selected(id: int):
 		
 		MENU_RESIZE:
 			_resize_dialog.popup_centered()
-			
+
+		MENU_AUTO_TEXTURE:
+			_run_auto_texturing()
+
 		MENU_UPDATE_EDITOR_COLLIDER:
 			# This is for editor tools to be able to use terrain collision.
 			# It's not automatic because keeping this collider up to date is
@@ -674,6 +681,55 @@ func _menu_item_selected(id: int):
 		
 		MENU_ABOUT:
 			_about_dialog.popup_centered()
+
+
+# Runs the automated texturing generator on the currently edited terrain.
+# Triggered from the "Terrain" menu. It reads the cached CPU heightmap (no
+# raycasts, no mesh iteration), computes per-cell texture weights from slope
+# angle and height, writes them into the splatmap(s) and uploads once.
+# The operation is registered in UndoRedo so it can be reverted with Ctrl+Z.
+func _run_auto_texturing():
+if _node == null:
+_logger.error("Auto-texturing: no terrain selected")
+return
+var data : HTerrainData = _node.get_data()
+if data == null:
+_logger.error("Auto-texturing: terrain has no data")
+return
+
+# Show the parameters resource in the inspector so the user can identify
+# which texture is grass / patchy grass-sand / sand / rock and tune
+# thresholds before or after running.
+edit(_auto_texturing)
+
+# Snapshot current splatmaps so the action can be undone
+var undo_map_ids := {}
+var redo_map_ids := {}
+for i in data.get_map_count(HTerrainData.CHANNEL_SPLAT):
+var im : Image = data.get_image(HTerrainData.CHANNEL_SPLAT, i)
+if im != null:
+undo_map_ids[i] = _image_cache.save_image(im)
+
+_auto_texturing.connect("progress_notified", self, "_terrain_progress_notified")
+var ok := _auto_texturing.generate(_node)
+_auto_texturing.disconnect("progress_notified", self, "_terrain_progress_notified")
+
+if not ok:
+_logger.error("Auto-texturing failed, see errors above")
+return
+
+var res := data.get_resolution()
+for i in data.get_map_count(HTerrainData.CHANNEL_SPLAT):
+var im : Image = data.get_image(HTerrainData.CHANNEL_SPLAT, i)
+if im != null and undo_map_ids.has(i):
+redo_map_ids[i] = _image_cache.save_image(im)
+
+data._edit_set_disable_apply_undo(true)
+_undo_redo.create_action("Auto texturize terrain")
+_undo_redo.add_do_method(data, "_edit_apply_maps_from_file_cache", _image_cache, redo_map_ids)
+_undo_redo.add_undo_method(data, "_edit_apply_maps_from_file_cache", _image_cache, undo_map_ids)
+_undo_redo.commit_action()
+data._edit_set_disable_apply_undo(false)
 
 
 func _on_lookdev_menu_about_to_show():
